@@ -26,6 +26,8 @@ import type {
   AppView,
   AutomationDefinition,
   ChatMessage,
+  ChatHistorySearchHit,
+  McpHealthResult,
   McpServerConfig,
   PrefetchedChat,
   RuntimeModelOption,
@@ -34,6 +36,7 @@ import { Trim0Logo } from "@renderer/components/trim0-logo";
 import { Badge } from "@renderer/components/ui/badge";
 import { Button } from "@renderer/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@renderer/components/ui/dialog";
+import { Input } from "@renderer/components/ui/input";
 import { ScrollArea } from "@renderer/components/ui/scroll-area";
 import { Separator } from "@renderer/components/ui/separator";
 import { cn } from "@renderer/lib/cn";
@@ -121,6 +124,10 @@ export default function App() {
   const [automationForm, setAutomationForm] = useState<AutomationFormState>(INITIAL_AUTOMATION_FORM);
   const [selectedAutomationId, setSelectedAutomationId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sessionSearchQuery, setSessionSearchQuery] = useState("");
+  const [sessionSearchHits, setSessionSearchHits] = useState<ChatHistorySearchHit[]>([]);
+  const [sessionSearchLoading, setSessionSearchLoading] = useState(false);
+  const [mcpHealth, setMcpHealth] = useState<McpHealthResult[] | undefined>(undefined);
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     id: string;
     toolName: string;
@@ -143,6 +150,7 @@ export default function App() {
   const refresh = async (preferredSessionId?: string) => {
     const payload = await window.trim0.bootstrap();
     setSnapshot(payload.snapshot);
+    setMcpHealth(payload.mcpHealth);
 
     let nextChat = payload.activeChat ?? null;
     if (preferredSessionId) {
@@ -166,8 +174,28 @@ export default function App() {
           window.trim0.fetchModels(),
         ]);
         setSnapshot(payload.snapshot);
+        setMcpHealth(payload.mcpHealth);
         setActiveChat(payload.activeChat ?? null);
         setModels(runtimeModels);
+        if (payload.providerHealth) {
+          if (payload.providerHealth.ok) {
+            toast.success("OpenRouter connected", {
+              description: `${payload.providerHealth.modelCount ?? 0} models available.`,
+            });
+          } else {
+            toast.error("OpenRouter check failed", {
+              description: payload.providerHealth.message ?? "Verify your API key in Settings.",
+            });
+          }
+        }
+        if (payload.mcpHealth?.length) {
+          const failed = payload.mcpHealth.filter((item) => !item.ok);
+          if (failed.length > 0) {
+            toast.warning("MCP server issue", {
+              description: `${failed.length} enabled server(s) did not respond. See Plugins to refresh.`,
+            });
+          }
+        }
         if (payload.activeChat) {
           prefetchCacheRef.current.set(payload.activeChat.session.id, payload.activeChat);
         }
@@ -204,13 +232,30 @@ export default function App() {
             return current;
           }
 
+          const nextSession =
+            event.sessionTitle !== undefined
+              ? { ...current.session, title: event.sessionTitle, updatedAt: event.message.createdAt }
+              : current.session;
+
           const next = {
             ...current,
+            session: nextSession,
             messages: [...current.messages, event.message],
             diffs: [...event.diffs, ...current.diffs],
           };
           prefetchCacheRef.current.set(next.session.id, next);
           return next;
+        });
+        setSnapshot((current) => {
+          if (!current || event.sessionTitle === undefined) {
+            return current;
+          }
+          return {
+            ...current,
+            sessions: current.sessions.map((session) =>
+              session.id === event.message.sessionId ? { ...session, title: event.sessionTitle! } : session,
+            ),
+          };
         });
         void refresh(event.message.sessionId);
       }
@@ -243,6 +288,33 @@ export default function App() {
     setTrim0AuthMode(trim0Server.authMode);
   }, [trim0Server]);
 
+  useEffect(() => {
+    const query = sessionSearchQuery.trim();
+    if (!query) {
+      setSessionSearchHits([]);
+      setSessionSearchLoading(false);
+      return;
+    }
+
+    setSessionSearchLoading(true);
+    const handle = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const hits = await window.trim0.searchChatHistory(query);
+          setSessionSearchHits(hits);
+        } catch {
+          setSessionSearchHits([]);
+        } finally {
+          setSessionSearchLoading(false);
+        }
+      })();
+    }, 220);
+
+    return () => {
+      window.clearTimeout(handle);
+    };
+  }, [sessionSearchQuery]);
+
   const handleOpenFolder = async () => {
     const payload = await window.trim0.openFolder();
     setSnapshot(payload.snapshot);
@@ -274,6 +346,21 @@ export default function App() {
       prefetchCacheRef.current.set(sessionId, payload);
     } finally {
       setPrefetchingId(null);
+    }
+  };
+
+  const handleSetSessionWorkspace = async (workspaceId: string | null) => {
+    if (!activeChat) return;
+    try {
+      const payload = await window.trim0.setSessionWorkspace(activeChat.session.id, workspaceId);
+      setActiveChat(payload);
+      prefetchCacheRef.current.set(payload.session.id, payload);
+      await refresh(payload.session.id);
+      toast.success("Workspace updated for this chat");
+    } catch (error) {
+      toast.error("Could not update workspace", {
+        description: error instanceof Error ? error.message : "Unknown error.",
+      });
     }
   };
 
@@ -549,6 +636,32 @@ export default function App() {
                   {snapshot.workspaces.find((workspace) => workspace.id === snapshot.activeWorkspaceId)?.path ??
                     "No folder open"}
                 </div>
+                {activeChat ? (
+                  <div className="mt-3 space-y-2">
+                    <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
+                      This chat uses
+                    </div>
+                    <label className="sr-only" htmlFor="session-workspace">
+                      Workspace for this chat
+                    </label>
+                    <select
+                      id="session-workspace"
+                      className="w-full border border-black bg-white px-3 py-2 text-sm font-medium text-black"
+                      value={activeChat.session.workspaceId ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        void handleSetSessionWorkspace(value === "" ? null : value);
+                      }}
+                    >
+                      <option value="">No workspace</option>
+                      {snapshot.workspaces.map((workspace) => (
+                        <option key={workspace.id} value={workspace.id}>
+                          {workspace.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
               </div>
 
               <div className="px-5 pb-4">
@@ -588,6 +701,46 @@ export default function App() {
                   <span>Recent chats</span>
                   <Badge>{deferredSessions.length}</Badge>
                 </div>
+                <div className="mb-3 space-y-2">
+                  <label className="sr-only" htmlFor="session-search">
+                    Search chat history
+                  </label>
+                  <Input
+                    id="session-search"
+                    value={sessionSearchQuery}
+                    onChange={(event) => setSessionSearchQuery(event.target.value)}
+                    placeholder="Search messages…"
+                    className="h-10 border-black text-sm"
+                  />
+                  {sessionSearchQuery.trim() ? (
+                    <div className="max-h-36 space-y-1 overflow-y-auto border border-zinc-300 bg-zinc-50 p-2 text-xs">
+                      {sessionSearchLoading ? (
+                        <div className="flex items-center gap-2 text-zinc-500">
+                          <LoaderCircle className="size-3 animate-spin" />
+                          Searching…
+                        </div>
+                      ) : sessionSearchHits.length === 0 ? (
+                        <div className="text-zinc-500">No matches.</div>
+                      ) : (
+                        sessionSearchHits.map((hit) => (
+                          <button
+                            key={hit.sessionId}
+                            type="button"
+                            className="w-full border border-transparent px-2 py-1.5 text-left hover:border-black hover:bg-white"
+                            onClick={() => {
+                              void switchChat(hit.sessionId);
+                              setSessionSearchQuery("");
+                              setSessionSearchHits([]);
+                            }}
+                          >
+                            <div className="font-black uppercase tracking-[0.12em]">{hit.title}</div>
+                            <div className="mt-0.5 line-clamp-2 text-zinc-600">{hit.snippet}</div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </div>
                 <ScrollArea className="min-h-0 flex-1 pr-2">
                   <div className="space-y-2">
                     {deferredSessions.map((session) => (
@@ -610,7 +763,10 @@ export default function App() {
                           </span>
                           <div className="flex items-center gap-2">
                             {prefetchingId === session.id ? (
-                              <LoaderCircle className="size-3 animate-spin" />
+                              <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.14em] text-zinc-500">
+                                <LoaderCircle className="size-3 animate-spin" />
+                                Prefetch
+                              </span>
                             ) : null}
                             <div
                               role="button"
@@ -680,6 +836,7 @@ export default function App() {
                   {view === "plugins" ? (
                     <PluginsView
                       snapshot={snapshot}
+                      mcpHealth={mcpHealth}
                       customMcpForm={customMcpForm}
                       setCustomMcpForm={setCustomMcpForm}
                       handleDiscoverTools={handleDiscoverTools}
@@ -797,45 +954,6 @@ export default function App() {
         </PanelGroup>
       )}
 
-      <Dialog open={!!pendingConfirmation} onOpenChange={() => setPendingConfirmation(null)}>
-        <DialogContent>
-          <DialogTitle>Confirm Action</DialogTitle>
-          <DialogDescription>
-            The agent wants to run a shell command. Approve or deny this request.
-          </DialogDescription>
-          <div className="mt-4 border border-black bg-zinc-50 p-3">
-            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
-              {pendingConfirmation?.toolName}
-            </div>
-            <pre className="mt-2 overflow-auto text-sm text-black">
-              {pendingConfirmation?.command}
-            </pre>
-          </div>
-          <div className="mt-5 flex justify-end gap-3">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (pendingConfirmation) {
-                  void window.trim0.confirmAction(pendingConfirmation.id, false);
-                }
-                setPendingConfirmation(null);
-              }}
-            >
-              Deny
-            </Button>
-            <Button
-              onClick={() => {
-                if (pendingConfirmation) {
-                  void window.trim0.confirmAction(pendingConfirmation.id, true);
-                }
-                setPendingConfirmation(null);
-              }}
-            >
-              Approve
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

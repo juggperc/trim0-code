@@ -18,7 +18,8 @@
     "typecheck": "tsc -b && tsc -p tsconfig.electron.json --noEmit",
     "lint": "eslint .",
     "preview": "vite preview",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4",

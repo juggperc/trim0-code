@@ -34,6 +34,8 @@ export interface McpServerConfig {
   authMode: McpAuthMode;
   enabled: boolean;
   toolCache: McpToolInfo[];
+  /** ISO timestamp when tool cache was last refreshed; used for TTL invalidation */
+  toolCacheUpdatedAt?: string;
   builtInSlug?: string;
   licenseKey?: string;
 }
@@ -127,9 +129,29 @@ export interface AppSnapshot {
   activeWorkspaceId: string | null;
 }
 
+export interface ProviderHealthResult {
+  ok: boolean;
+  modelCount?: number;
+  message?: string;
+}
+
+export interface McpHealthResult {
+  serverId: string;
+  ok: boolean;
+  message?: string;
+}
+
 export interface BootstrapPayload {
   snapshot: AppSnapshot;
   activeChat?: PrefetchedChat;
+  providerHealth?: ProviderHealthResult;
+  mcpHealth?: McpHealthResult[];
+}
+
+export interface ChatHistorySearchHit {
+  sessionId: string;
+  title: string;
+  snippet: string;
 }
 
 export interface SendMessageInput {
@@ -160,6 +182,8 @@ export interface SaveMcpServerInput {
   authMode: McpAuthMode;
   enabled: boolean;
   toolCache?: McpToolInfo[];
+  /** Set when tool cache is refreshed (defaults to now when toolCache is written) */
+  toolCacheUpdatedAt?: string;
   licenseKey?: string;
 }
 
@@ -213,6 +237,8 @@ export type AgentEvent =
       type: "assistant-final";
       message: ChatMessage;
       diffs: DiffSnapshot[];
+      /** Present when the session title was updated in the database (e.g. auto-titled) */
+      sessionTitle?: string;
       timestamp: string;
     }
   | {
@@ -271,6 +297,8 @@ export interface Trim0DesktopApi {
   deleteAutomation: (id: string) => Promise<void>;
   runAutomation: (id: string) => Promise<void>;
   fetchModels: () => Promise<RuntimeModelOption[]>;
+  searchChatHistory: (query: string) => Promise<ChatHistorySearchHit[]>;
+  setSessionWorkspace: (sessionId: string, workspaceId: string | null) => Promise<PrefetchedChat>;
   onAgentEvent: (listener: (event: AgentEvent) => void) => () => void;
   confirmAction: (confirmationId: string, approved: boolean) => Promise<void>;
 }

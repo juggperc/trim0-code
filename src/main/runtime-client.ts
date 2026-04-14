@@ -187,4 +187,19 @@ export class RuntimeClient {
 
     return (await response.json()) as RuntimeModelOption[];
   }
+
+  async checkMcpHealth(server: McpServerConfig) {
+    const response = await fetch(`${this.baseUrl}/mcp/health`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ server }),
+    });
+
+    if (!response.ok) {
+      const error = (await response.json()) as { error?: string };
+      return { ok: false as const, message: error.error || "Health check failed." };
+    }
+
+    return (await response.json()) as { ok: boolean; message?: string };
+  }
 }
