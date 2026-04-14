@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.electron.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "strict": true,
+    "ignoreDeprecations": "6.0",
+    "sourceMap": true,
+    "rootDir": "./src",
+    "outDir": "./dist-electron",
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      "@main/*": ["src/main/*"],
+      "@runtime/*": ["src/runtime/*"],
+      "@shared/*": ["src/shared/*"]
+    }
+  },
+  "include": ["src/main", "src/preload", "src/runtime", "src/shared"]
+}
