@@ -523,6 +523,8 @@ const chunkAssistantText = (text: string) => {
   return chunks;
 };
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 const callOpenRouter = async (
   provider: ProviderConfig,
   body: Record<string, unknown>,
@@ -531,32 +533,47 @@ const callOpenRouter = async (
     throw new Error("Add an OpenRouter API key in Settings before chatting.");
   }
 
-  const response = await fetch(`${provider.baseUrl || OPENROUTER_DEFAULT_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${provider.apiKey}`,
-      "Content-Type": "application/json",
-      ...provider.headers,
-    },
-    body: JSON.stringify(body),
-  });
+  const url = `${provider.baseUrl || OPENROUTER_DEFAULT_BASE_URL}/chat/completions`;
+  const maxAttempts = 4;
+  let lastStatus = 0;
 
-  if (!response.ok) {
-    throw new Error(`OpenRouter request failed with ${response.status}.`);
-  }
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provider.apiKey}`,
+        "Content-Type": "application/json",
+        ...provider.headers,
+      },
+      body: JSON.stringify(body),
+    });
 
-  return (await response.json()) as {
-    choices?: Array<{
-      message?: {
-        content?: string;
-        tool_calls?: Array<{
-          id: string;
-          type: "function";
-          function: { name: string; arguments: string };
+    if (response.ok) {
+      return (await response.json()) as {
+        choices?: Array<{
+          message?: {
+            content?: string;
+            tool_calls?: Array<{
+              id: string;
+              type: "function";
+              function: { name: string; arguments: string };
+            }>;
+          };
         }>;
       };
-    }>;
-  };
+    }
+
+    lastStatus = response.status;
+    const retryable = response.status === 429 || response.status >= 500;
+    if (!retryable || attempt === maxAttempts - 1) {
+      break;
+    }
+
+    const backoffMs = 400 * 2 ** attempt;
+    await sleep(backoffMs);
+  }
+
+  throw new Error(`OpenRouter request failed with ${lastStatus}.`);
 };
 
 const runAgent = async (
@@ -712,6 +729,19 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJson<{ server: McpServerConfig }>(req);
       const result = await discoverMcpTools(payload.server);
       return jsonResponse(res, 200, result);
+    }
+
+    if (req.method === "POST" && url.pathname === "/mcp/health") {
+      const payload = await readJson<{ server: McpServerConfig }>(req);
+      try {
+        await discoverMcpTools(payload.server);
+        return jsonResponse(res, 200, { ok: true });
+      } catch (error) {
+        return jsonResponse(res, 200, {
+          ok: false,
+          message: error instanceof Error ? error.message : "MCP health check failed.",
+        });
+      }
     }
 
     if (req.method === "POST" && url.pathname === "/agent/confirm") {

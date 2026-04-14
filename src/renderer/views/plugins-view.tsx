@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { RefreshCcw, Save } from "lucide-react";
-import type { AppSnapshot, McpServerConfig } from "@shared/types";
+import type { AppSnapshot, McpHealthResult, McpServerConfig } from "@shared/types";
 import { Badge } from "@renderer/components/ui/badge";
 import { Button } from "@renderer/components/ui/button";
 import { Input } from "@renderer/components/ui/input";
@@ -36,6 +36,7 @@ export const INITIAL_CUSTOM_MCP_FORM: CustomMcpFormState = {
 
 export interface PluginsViewProps {
   snapshot: AppSnapshot;
+  mcpHealth?: McpHealthResult[];
   customMcpForm: CustomMcpFormState;
   setCustomMcpForm: React.Dispatch<React.SetStateAction<CustomMcpFormState>>;
   handleDiscoverTools: (serverId: string) => Promise<void>;
@@ -43,8 +44,27 @@ export interface PluginsViewProps {
   saving: boolean;
 }
 
+const formatCacheAge = (iso?: string) => {
+  if (!iso) {
+    return "Unknown";
+  }
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) {
+    return "Unknown";
+  }
+  const hours = Math.floor(ms / (60 * 60 * 1000));
+  if (hours < 1) {
+    return `${Math.max(1, Math.floor(ms / 60000))}m ago`;
+  }
+  if (hours < 48) {
+    return `${hours}h ago`;
+  }
+  return `${Math.floor(hours / 24)}d ago`;
+};
+
 export function PluginsView({
   snapshot,
+  mcpHealth,
   customMcpForm,
   setCustomMcpForm,
   handleDiscoverTools,
@@ -61,21 +81,31 @@ export function PluginsView({
       className="grid h-full gap-6 overflow-auto p-5 xl:grid-cols-[minmax(0,1fr)_360px]"
     >
       <section className="space-y-4">
-        {snapshot.mcpServers.map((server) => (
+        {snapshot.mcpServers.map((server) => {
+          const health = mcpHealth?.find((item) => item.serverId === server.id);
+          return (
           <article key={server.id} className="border border-black bg-white p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge variant={server.enabled ? "default" : "outline"}>
                     {server.kind}
                   </Badge>
                   {server.builtInSlug ? <Badge variant="accent">first-party</Badge> : null}
+                  {health ? (
+                    <Badge variant={health.ok ? "outline" : "subtle"}>
+                      {health.ok ? "Reachable" : "Unreachable"}
+                    </Badge>
+                  ) : null}
                 </div>
                 <h3 className="text-xl font-black uppercase tracking-[0.14em]">
                   {server.label}
                 </h3>
                 <p className="text-sm text-zinc-600">
                   {server.url || server.command || "Local MCP configuration"}
+                </p>
+                <p className="text-xs text-zinc-500">
+                  Tool cache refreshed {formatCacheAge(server.toolCacheUpdatedAt)}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -109,7 +139,8 @@ export function PluginsView({
               )}
             </div>
           </article>
-        ))}
+        );
+        })}
       </section>
 
       <section className="space-y-4 border border-black bg-white p-5">

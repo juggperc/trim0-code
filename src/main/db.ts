@@ -80,6 +80,7 @@ export class AppDatabase {
         auth_mode text not null,
         enabled integer not null,
         tool_cache_json text not null,
+        tool_cache_updated_at text,
         built_in_slug text,
         license_key text
       );
@@ -150,7 +151,56 @@ export class AppDatabase {
       );
     `);
 
+    this.migrate();
     this.seedDefaults();
+  }
+
+  private migrate() {
+    const columns = this.db.prepare("pragma table_info(mcp_servers)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "tool_cache_updated_at")) {
+      this.db.exec("alter table mcp_servers add column tool_cache_updated_at text");
+      this.db.exec(
+        "update mcp_servers set tool_cache_updated_at = datetime('now') where tool_cache_updated_at is null",
+      );
+    }
+
+    const ftsExists = this.db
+      .prepare("select name from sqlite_master where type='table' and name='chat_messages_fts'")
+      .get() as { name?: string } | undefined;
+    if (!ftsExists) {
+      this.db.exec(`
+        create virtual table chat_messages_fts using fts5(
+          session_id unindexed,
+          message_id unindexed,
+          content,
+          tokenize = 'porter unicode61'
+        );
+
+        insert into chat_messages_fts(session_id, message_id, content)
+        select session_id, id, content from chat_messages
+        where role in ('user', 'assistant');
+
+        create trigger chat_messages_ai_fts after insert on chat_messages
+        when new.role in ('user', 'assistant')
+        begin
+          insert into chat_messages_fts(session_id, message_id, content)
+          values (new.session_id, new.id, new.content);
+        end;
+
+        create trigger chat_messages_ad_fts after delete on chat_messages
+        begin
+          delete from chat_messages_fts where message_id = old.id;
+        end;
+
+        create trigger chat_messages_au_fts after update of content, session_id, role on chat_messages
+        begin
+          delete from chat_messages_fts where message_id = old.id;
+          insert into chat_messages_fts(session_id, message_id, content)
+          select new.session_id, new.id, new.content
+          where new.role in ('user', 'assistant');
+        end;
+      `);
+    }
   }
 
   private seedDefaults() {
@@ -221,6 +271,7 @@ export class AppDatabase {
       authMode: row.auth_mode as McpServerConfig["authMode"],
       enabled: Boolean(row.enabled),
       toolCache: parseJson(row.tool_cache_json, []),
+      toolCacheUpdatedAt: row.tool_cache_updated_at ? String(row.tool_cache_updated_at) : undefined,
       builtInSlug: row.built_in_slug ? String(row.built_in_slug) : undefined,
       licenseKey: row.license_key ? String(row.license_key) : "",
     };
@@ -335,6 +386,91 @@ export class AppDatabase {
       activeSessionId: this.getMeta("activeSessionId") || null,
       activeWorkspaceId: this.getMeta("activeWorkspaceId") || null,
     };
+  }
+
+  searchChatHistory(query: string) {
+    const raw = query.trim();
+    if (!raw) {
+      return [];
+    }
+
+    const tokens = raw.split(/\s+/).filter(Boolean).slice(0, 8);
+    if (tokens.length === 0) {
+      return [];
+    }
+
+    const ftsQuery = tokens
+      .map((token) => {
+        const escaped = token.replace(/"/g, '""');
+        return `"${escaped}"*`;
+      })
+      .join(" AND ");
+
+    try {
+      const rows = this.db
+        .prepare(
+          `select
+             f.session_id as session_id,
+             cs.title as title,
+             snippet(chat_messages_fts, 2, '', '', '…', 24) as snippet,
+             rank
+           from chat_messages_fts f
+           join chat_sessions cs on cs.id = f.session_id
+           where chat_messages_fts match @matchQuery
+           order by rank
+           limit 80`,
+        )
+        .all({ matchQuery: ftsQuery }) as Array<{
+          session_id: string;
+          title: string;
+          snippet: string;
+          rank: number;
+        }>;
+
+      const seen = new Set<string>();
+      const hits: Array<{ sessionId: string; title: string; snippet: string }> = [];
+
+      for (const row of rows) {
+        if (seen.has(row.session_id)) {
+          continue;
+        }
+        seen.add(row.session_id);
+        hits.push({
+          sessionId: row.session_id,
+          title: row.title,
+          snippet: row.snippet.trim(),
+        });
+        if (hits.length >= 20) {
+          break;
+        }
+      }
+
+      return hits;
+    } catch {
+      return [];
+    }
+  }
+
+  setSessionWorkspace(sessionId: string, workspaceId: string | null) {
+    const timestamp = nowIso();
+    this.db
+      .prepare("update chat_sessions set workspace_id = ?, updated_at = ? where id = ?")
+      .run(workspaceId, timestamp, sessionId);
+    return this.getPrefetchedChat(sessionId);
+  }
+
+  listMcpServersWithStaleToolCache(ttlMs: number) {
+    const cutoff = Date.now() - ttlMs;
+    return this.listMcpServers().filter((server) => {
+      if (!server.enabled) {
+        return false;
+      }
+      if (!server.toolCacheUpdatedAt) {
+        return true;
+      }
+      const updated = new Date(server.toolCacheUpdatedAt).getTime();
+      return Number.isFinite(updated) && updated < cutoff;
+    });
   }
 
   getPrefetchedChat(sessionId: string): PrefetchedChat {
@@ -534,6 +670,16 @@ export class AppDatabase {
   }
 
   saveMcpServer(input: SaveMcpServerInput | McpServerConfig) {
+    const existingRow = input.id
+      ? (this.db.prepare("select * from mcp_servers where id = ?").get(input.id) as SqliteRow | undefined)
+      : undefined;
+    const existing = existingRow ? this.mapMcpServer(existingRow) : undefined;
+
+    const toolCache = input.toolCache ?? existing?.toolCache ?? [];
+    const toolCacheUpdatedAt =
+      input.toolCacheUpdatedAt ??
+      (input.toolCache !== undefined ? nowIso() : existing?.toolCacheUpdatedAt);
+
     const record: McpServerConfig = {
       id: input.id ?? randomUUID(),
       kind: input.kind,
@@ -544,15 +690,17 @@ export class AppDatabase {
       env: input.env ?? {},
       authMode: input.authMode,
       enabled: input.enabled,
-      toolCache: input.toolCache ?? [],
+      toolCache,
+      toolCacheUpdatedAt,
+      builtInSlug: (input as McpServerConfig).builtInSlug ?? existing?.builtInSlug,
       licenseKey: input.licenseKey ?? "",
     };
 
     this.db
       .prepare(
         `insert into mcp_servers
-         (id, kind, label, command, url, args_json, env_json, auth_mode, enabled, tool_cache_json, built_in_slug, license_key)
-         values (@id, @kind, @label, @command, @url, @argsJson, @envJson, @authMode, @enabled, @toolCacheJson, @builtInSlug, @licenseKey)
+         (id, kind, label, command, url, args_json, env_json, auth_mode, enabled, tool_cache_json, tool_cache_updated_at, built_in_slug, license_key)
+         values (@id, @kind, @label, @command, @url, @argsJson, @envJson, @authMode, @enabled, @toolCacheJson, @toolCacheUpdatedAt, @builtInSlug, @licenseKey)
          on conflict(id) do update set
            kind = excluded.kind,
            label = excluded.label,
@@ -563,6 +711,7 @@ export class AppDatabase {
            auth_mode = excluded.auth_mode,
            enabled = excluded.enabled,
            tool_cache_json = excluded.tool_cache_json,
+           tool_cache_updated_at = excluded.tool_cache_updated_at,
            built_in_slug = excluded.built_in_slug,
            license_key = excluded.license_key`,
       )
@@ -571,6 +720,7 @@ export class AppDatabase {
         argsJson: json(record.args),
         envJson: json(record.env),
         toolCacheJson: json(record.toolCache),
+        toolCacheUpdatedAt: record.toolCacheUpdatedAt ?? null,
         builtInSlug: record.builtInSlug ?? null,
         enabled: record.enabled ? 1 : 0,
       });

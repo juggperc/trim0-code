@@ -9,6 +9,7 @@ import { Button } from "@renderer/components/ui/button";
 import { ScrollArea } from "@renderer/components/ui/scroll-area";
 import { Textarea } from "@renderer/components/ui/textarea";
 import { cn } from "@renderer/lib/cn";
+import { highlightMessageContent } from "@renderer/lib/message-highlights";
 
 export interface ChatViewProps {
   activeChat: PrefetchedChat | null;
@@ -102,7 +103,9 @@ export function ChatView({
                       {new Date(message.createdAt).toLocaleTimeString()}
                     </span>
                   </div>
-                  <div className="message-prose text-sm leading-6">{message.content}</div>
+                  <div className="message-prose text-sm leading-6">
+                    {message.role === "assistant" ? highlightMessageContent(message.content) : message.content}
+                  </div>
                 </article>
               ))}
 
@@ -112,7 +115,9 @@ export function ChatView({
                     <LoaderCircle className="size-3 animate-spin" />
                     Assistant
                   </div>
-                  <div className="message-prose text-sm leading-6">{streamingAssistant}</div>
+                  <div className="message-prose text-sm leading-6">
+                    {highlightMessageContent(streamingAssistant)}
+                  </div>
                 </article>
               ) : null}
 

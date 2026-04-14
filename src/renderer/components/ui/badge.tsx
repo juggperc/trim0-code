@@ -9,6 +9,7 @@ const badgeVariants = cva(
         default: "border-black bg-black text-white",
         outline: "border-zinc-300 bg-white text-zinc-700",
         accent: "border-black bg-cyan-100 text-black",
+        subtle: "border-zinc-300 bg-zinc-100 text-zinc-800",
       },
     },
     defaultVariants: {

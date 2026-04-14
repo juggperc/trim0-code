@@ -24,6 +24,9 @@ const api: Trim0DesktopApi = {
   deleteAutomation: (id: string) => ipcRenderer.invoke("automation:delete", id),
   runAutomation: (id: string) => ipcRenderer.invoke("automation:run", id),
   fetchModels: () => ipcRenderer.invoke("provider:models"),
+  searchChatHistory: (query: string) => ipcRenderer.invoke("chat:search", query),
+  setSessionWorkspace: (sessionId: string, workspaceId: string | null) =>
+    ipcRenderer.invoke("chat:set-workspace", sessionId, workspaceId),
   onAgentEvent: (listener: (event: AgentEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: AgentEvent) => {
       listener(payload);

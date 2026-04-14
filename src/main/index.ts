@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification } from "electron";
 import { AGENT_SYSTEM_PROMPT, TRIM0_PRESET } from "@shared/brand.js";
 import type {
   AgentEvent,
@@ -9,6 +9,8 @@ import type {
   BootstrapPayload,
   ChatMessage,
   McpAuthMode,
+  McpHealthResult,
+  ProviderHealthResult,
   SaveAutomationInput,
   SaveMcpServerInput,
   SaveProviderInput,
@@ -26,6 +28,8 @@ let database: AppDatabase;
 let runtime: RuntimeClient;
 let scheduler: AutomationScheduler;
 
+const MCP_TOOL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
 const nowIso = () => new Date().toISOString();
 
 const ensureSession = () => {
@@ -35,16 +39,78 @@ const ensureSession = () => {
   }
 };
 
-const getBootstrapPayload = (): BootstrapPayload => {
+const verifyProviderHealth = async (): Promise<ProviderHealthResult | undefined> => {
+  const snapshot = database.getSnapshot();
+  const provider =
+    snapshot.providers.find((item) => item.enabled) ?? snapshot.providers[0];
+  if (!provider?.apiKey) {
+    return { ok: false, message: "No API key configured." };
+  }
+
+  try {
+    const models = await runtime.fetchModels(provider);
+    if (models.length === 0) {
+      return { ok: false, message: "OpenRouter returned no models. Check your key and base URL." };
+    }
+    return { ok: true, modelCount: models.length };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Provider check failed.",
+    };
+  }
+};
+
+const refreshStaleMcpServers = async () => {
+  const stale = database.listMcpServersWithStaleToolCache(MCP_TOOL_CACHE_TTL_MS);
+  for (const server of stale) {
+    try {
+      const result = await runtime.discoverMcpTools(server);
+      database.saveMcpServer({
+        ...server,
+        toolCache: result.tools,
+        toolCacheUpdatedAt: nowIso(),
+      });
+    } catch {
+      // Discovery can fail when the server is offline; leave cache as-is.
+    }
+  }
+};
+
+const getBootstrapPayload = async (): Promise<BootstrapPayload> => {
   ensureSession();
+  await refreshStaleMcpServers();
+
   const snapshot = database.getSnapshot();
   const activeSessionId =
     snapshot.activeSessionId || snapshot.sessions[0]?.id || database.createChat().session.id;
   const activeChat = activeSessionId ? database.getPrefetchedChat(activeSessionId) : undefined;
 
+  const providerHealth = await verifyProviderHealth();
+
+  const mcpHealth: McpHealthResult[] = [];
+  for (const server of snapshot.mcpServers.filter((item) => item.enabled)) {
+    try {
+      const result = await runtime.checkMcpHealth(server);
+      mcpHealth.push({
+        serverId: server.id,
+        ok: result.ok,
+        message: result.message,
+      });
+    } catch (error) {
+      mcpHealth.push({
+        serverId: server.id,
+        ok: false,
+        message: error instanceof Error ? error.message : "Health check failed.",
+      });
+    }
+  }
+
   return {
     snapshot: database.getSnapshot(),
     activeChat,
+    providerHealth,
+    mcpHealth,
   };
 };
 
@@ -140,8 +206,11 @@ const runSessionPrompt = async (
     database.saveDiffs(runtimeResponse.diffs);
   }
 
+  let sessionTitleAfterRun: string | undefined;
   if (session.title === "New chat") {
-    database.updateSessionTitle(sessionId, runtimeResponse.titleSuggestion || content.slice(0, 42));
+    const nextTitle = runtimeResponse.titleSuggestion || content.slice(0, 42);
+    database.updateSessionTitle(sessionId, nextTitle);
+    sessionTitleAfterRun = nextTitle;
   }
 
   const finalEvent: AgentEvent = {
@@ -149,6 +218,7 @@ const runSessionPrompt = async (
     type: "assistant-final",
     message: assistantMessage,
     diffs: runtimeResponse.diffs,
+    ...(sessionTitleAfterRun !== undefined ? { sessionTitle: sessionTitleAfterRun } : {}),
     timestamp: nowIso(),
   };
   if (emitEvents) {
@@ -196,6 +266,12 @@ const runAutomation = async (automationId: string, nextRunAt?: string) => {
     historyEntry.summary =
       error instanceof Error ? error.message : "Automation failed unexpectedly.";
     database.markAutomationRun(automationId, historyEntry, nextRunAt ?? scheduler.nextRunAt(automation.schedule));
+    if (Notification.isSupported()) {
+      new Notification({
+        title: "Automation failed",
+        body: `${automation.name}: ${historyEntry.summary}`,
+      }).show();
+    }
   }
 };
 
@@ -238,6 +314,14 @@ const registerIpc = () => {
 
     return getBootstrapPayload();
   });
+
+  ipcMain.handle("chat:search", async (_event, query: string) => database.searchChatHistory(query));
+
+  ipcMain.handle(
+    "chat:set-workspace",
+    async (_event, sessionId: string, workspaceId: string | null) =>
+      database.setSessionWorkspace(sessionId, workspaceId),
+  );
 
   ipcMain.handle("chat:create", async () => {
     const chat = database.createChat();
@@ -325,6 +409,7 @@ const registerIpc = () => {
     database.saveMcpServer({
       ...server,
       toolCache: result.tools,
+      toolCacheUpdatedAt: nowIso(),
     });
     return result;
   });
@@ -358,6 +443,11 @@ app.whenReady().then(async () => {
   await runtime.start();
   scheduler.sync(database.listAutomations());
   registerIpc();
+
+  setInterval(() => {
+    void refreshStaleMcpServers();
+  }, 15 * 60 * 1000);
+
   await createWindow();
 
   app.on("activate", async () => {
