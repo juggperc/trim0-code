@@ -5,6 +5,7 @@ import { app } from "electron";
 import type {
   AgentEvent,
   McpServerConfig,
+  McpValidateResult,
   ProviderConfig,
   RuntimeAgentRequest,
   RuntimeAgentResponse,
@@ -28,10 +29,18 @@ export class RuntimeClient {
 
     const match = candidates.find((candidate) => fs.existsSync(candidate));
     if (!match) {
-      throw new Error("Could not find the Bun runtime entrypoint.");
+      throw new Error("Could not find the agent runtime entrypoint (dist-electron/runtime/server.js).");
     }
 
     return match;
+  }
+
+  /**
+   * Run the sidecar with the same binary as this process using Electron's embedded Node.
+   * Avoids requiring a separate `bun` or system `node` on PATH (fixes Windows ENOENT).
+   */
+  private getNodeExecutableForRuntime() {
+    return process.execPath;
   }
 
   async start() {
@@ -40,10 +49,15 @@ export class RuntimeClient {
     }
 
     const entry = this.getRuntimeEntry();
-    this.child = spawn("bun", [entry, "--port", String(RUNTIME_PORT)], {
+    const nodeExecutable = this.getNodeExecutableForRuntime();
+    this.child = spawn(nodeExecutable, [entry, "--port", String(RUNTIME_PORT)], {
       cwd: app.getAppPath(),
-      env: process.env,
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: "1",
+      },
       windowsHide: true,
+      shell: false,
     });
 
     this.child.stdout.on("data", (chunk) => {
@@ -172,6 +186,21 @@ export class RuntimeClient {
     }
 
     return (await response.json()) as RuntimeDiscoveryResult;
+  }
+
+  async validateMcpServer(server: McpServerConfig): Promise<McpValidateResult> {
+    const response = await fetch(`${this.baseUrl}/mcp/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ server }),
+    });
+
+    if (!response.ok) {
+      const error = (await response.json()) as { error?: string };
+      throw new Error(error.error || "MCP validation failed.");
+    }
+
+    return (await response.json()) as McpValidateResult;
   }
 
   async fetchModels(provider: ProviderConfig) {

@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { RefreshCcw, Save } from "lucide-react";
 import type { AppSnapshot, McpServerConfig } from "@shared/types";
+import type { CustomMcpFormState } from "@renderer/view-form-constants";
 import { Badge } from "@renderer/components/ui/badge";
 import { Button } from "@renderer/components/ui/button";
 import { Input } from "@renderer/components/ui/input";
@@ -9,30 +10,7 @@ import { Switch } from "@renderer/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@renderer/components/ui/tabs";
 import { Textarea } from "@renderer/components/ui/textarea";
 
-export type CustomMcpFormState = {
-  id?: string;
-  kind: "http" | "stdio";
-  label: string;
-  command: string;
-  url: string;
-  args: string;
-  env: string;
-  authMode: McpServerConfig["authMode"];
-  enabled: boolean;
-  licenseKey: string;
-};
-
-export const INITIAL_CUSTOM_MCP_FORM: CustomMcpFormState = {
-  kind: "http",
-  label: "",
-  command: "",
-  url: "",
-  args: "",
-  env: "",
-  authMode: "none",
-  enabled: true,
-  licenseKey: "",
-};
+export type { CustomMcpFormState } from "@renderer/view-form-constants";
 
 export interface PluginsViewProps {
   snapshot: AppSnapshot;
@@ -77,6 +55,15 @@ export function PluginsView({
                 <p className="text-sm text-zinc-600">
                   {server.url || server.command || "Local MCP configuration"}
                 </p>
+                {server.lastHealthAt ? (
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Last check: {new Date(server.lastHealthAt).toLocaleString()} —{" "}
+                    <span className={server.lastHealthOk ? "text-emerald-700" : "text-red-600"}>
+                      {server.lastHealthOk ? "OK" : "Failed"}
+                    </span>
+                    {server.lastHealthMessage ? ` — ${server.lastHealthMessage}` : null}
+                  </p>
+                ) : null}
               </div>
               <div className="flex gap-2">
                 <Button

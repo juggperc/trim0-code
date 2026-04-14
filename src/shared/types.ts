@@ -36,6 +36,10 @@ export interface McpServerConfig {
   toolCache: McpToolInfo[];
   builtInSlug?: string;
   licenseKey?: string;
+  /** Last connectivity check (ISO), optional in v1 */
+  lastHealthAt?: string;
+  lastHealthOk?: boolean;
+  lastHealthMessage?: string;
 }
 
 export interface WorkspaceRecord {
@@ -43,6 +47,8 @@ export interface WorkspaceRecord {
   path: string;
   name: string;
   lastOpenedAt: string;
+  /** Indexed file paths (relative), populated when a folder is opened */
+  fileIndex?: string[];
 }
 
 export interface ChatSession {
@@ -161,6 +167,10 @@ export interface SaveMcpServerInput {
   enabled: boolean;
   toolCache?: McpToolInfo[];
   licenseKey?: string;
+  builtInSlug?: string;
+  lastHealthAt?: string;
+  lastHealthOk?: boolean;
+  lastHealthMessage?: string;
 }
 
 export interface SaveProviderInput {
@@ -244,7 +254,7 @@ export interface RuntimeAgentResponse {
 export interface RuntimeHealth {
   ok: boolean;
   pid?: number;
-  bunVersion?: string;
+  nodeVersion?: string;
 }
 
 export interface RuntimeDiscoveryResult {
@@ -256,6 +266,12 @@ export interface RuntimeModelOption {
   name: string;
 }
 
+export interface McpValidateResult {
+  ok: boolean;
+  message: string;
+  toolCount?: number;
+}
+
 export interface Trim0DesktopApi {
   bootstrap: () => Promise<BootstrapPayload>;
   openFolder: () => Promise<BootstrapPayload>;
@@ -265,6 +281,7 @@ export interface Trim0DesktopApi {
   sendMessage: (input: SendMessageInput) => Promise<{ runId: string }>;
   saveProvider: (input: SaveProviderInput) => Promise<ProviderConfig>;
   saveTrim0License: (licenseKey: string, authMode: McpAuthMode) => Promise<McpServerConfig>;
+  validateTrim0Connection: () => Promise<McpValidateResult>;
   saveMcpServer: (input: SaveMcpServerInput) => Promise<McpServerConfig>;
   discoverMcpTools: (serverId: string) => Promise<RuntimeDiscoveryResult>;
   saveAutomation: (input: SaveAutomationInput) => Promise<AutomationDefinition>;

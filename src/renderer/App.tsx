@@ -26,6 +26,7 @@ import type {
   AppView,
   AutomationDefinition,
   ChatMessage,
+  DiffSnapshot,
   McpServerConfig,
   PrefetchedChat,
   RuntimeModelOption,
@@ -37,10 +38,18 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@renderer
 import { ScrollArea } from "@renderer/components/ui/scroll-area";
 import { Separator } from "@renderer/components/ui/separator";
 import { cn } from "@renderer/lib/cn";
+import {
+  INITIAL_AUTOMATION_FORM,
+  INITIAL_CUSTOM_MCP_FORM,
+  INITIAL_PROVIDER_FORM,
+  type AutomationFormState,
+  type CustomMcpFormState,
+  type ProviderFormState,
+} from "./view-form-constants";
 import { ChatView } from "./views/chat-view";
-import { PluginsView, type CustomMcpFormState, INITIAL_CUSTOM_MCP_FORM } from "./views/plugins-view";
-import { AutomationsView, type AutomationFormState, INITIAL_AUTOMATION_FORM } from "./views/automations-view";
-import { SettingsView, type ProviderFormState, INITIAL_PROVIDER_FORM } from "./views/settings-view";
+import { PluginsView } from "./views/plugins-view";
+import { AutomationsView } from "./views/automations-view";
+import { SettingsView } from "./views/settings-view";
 
 
 const VIEWS: Array<{ id: AppView; label: string; icon: typeof MessagesSquare }> = [
@@ -139,6 +148,26 @@ export default function App() {
     () => snapshot?.mcpServers.find((server) => server.builtInSlug === "trim0") ?? null,
     [snapshot],
   );
+
+  const activeWorkspace = useMemo(
+    () => snapshot?.workspaces.find((w) => w.id === snapshot.activeWorkspaceId) ?? null,
+    [snapshot],
+  );
+
+  const diffsByFile = useMemo(() => {
+    const list = activeChat?.diffs ?? [];
+    if (!list.length) return [] as Array<{ filePath: string; items: DiffSnapshot[] }>;
+    const order: string[] = [];
+    const map = new Map<string, DiffSnapshot[]>();
+    for (const diff of list) {
+      if (!map.has(diff.filePath)) {
+        order.push(diff.filePath);
+        map.set(diff.filePath, []);
+      }
+      map.get(diff.filePath)!.push(diff);
+    }
+    return order.map((filePath) => ({ filePath, items: map.get(filePath)! }));
+  }, [activeChat?.diffs]);
 
   const refresh = async (preferredSessionId?: string) => {
     const payload = await window.trim0.bootstrap();
@@ -354,6 +383,29 @@ export default function App() {
     }
   };
 
+  const handleValidateTrim0 = async () => {
+    setSaving(true);
+    try {
+      const result = await window.trim0.validateTrim0Connection();
+      await refresh(activeChat?.session.id);
+      if (result.ok) {
+        toast.success("trim0 reachable", {
+          description: result.message,
+        });
+      } else {
+        toast.error("trim0 check failed", {
+          description: result.message,
+        });
+      }
+    } catch (error) {
+      toast.error("Validation failed", {
+        description: error instanceof Error ? error.message : "Unknown error.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveCustomMcp = async () => {
     setSaving(true);
     try {
@@ -525,8 +577,9 @@ export default function App() {
             <aside className="flex h-full flex-col">
               <div className="border-b border-black p-5">
                 <Trim0Logo />
-                <p className="mt-3 max-w-[18rem] text-sm text-zinc-600">
-                  Super-fast local coding with built-in trim0 MCP, OpenRouter, and live diffs.
+                <p className="mt-3 max-w-[18rem] text-sm leading-relaxed text-zinc-600">
+                  Local workspace agent — trim0 MCP, OpenRouter, live diffs. Black/white shell, zero-radius,
+                  uppercase chrome.
                 </p>
               </div>
 
@@ -546,8 +599,16 @@ export default function App() {
                   Active workspace
                 </div>
                 <div className="border border-black bg-zinc-50 px-3 py-3 text-sm">
-                  {snapshot.workspaces.find((workspace) => workspace.id === snapshot.activeWorkspaceId)?.path ??
-                    "No folder open"}
+                  <div className="break-all font-medium text-black">
+                    {activeWorkspace?.path ?? "No folder open"}
+                  </div>
+                  {activeWorkspace?.fileIndex?.length ? (
+                    <div className="mt-2 text-xs font-black uppercase tracking-[0.16em] text-zinc-500">
+                      Indexed {activeWorkspace.fileIndex.length.toLocaleString()} files
+                    </div>
+                  ) : activeWorkspace ? (
+                    <div className="mt-2 text-xs text-zinc-500">Open folder again to index files.</div>
+                  ) : null}
                 </div>
               </div>
 
@@ -562,6 +623,8 @@ export default function App() {
                       <button
                         key={item.id}
                         type="button"
+                        aria-pressed={view === item.id}
+                        aria-label={`${item.label} view`}
                         className={cn(
                           "flex min-h-[44px] items-center justify-between border px-3 py-2 text-left text-sm font-black uppercase tracking-[0.18em] transition-colors",
                           view === item.id
@@ -594,6 +657,8 @@ export default function App() {
                       <button
                         key={session.id}
                         type="button"
+                        aria-current={activeChat?.session.id === session.id ? "true" : undefined}
+                        aria-label={`Open chat ${session.title}`}
                         className={cn(
                           "grid w-full gap-2 border px-3 py-3 text-left transition-colors group",
                           activeChat?.session.id === session.id
@@ -615,10 +680,12 @@ export default function App() {
                             <div
                               role="button"
                               tabIndex={0}
+                              aria-label={`Delete chat ${session.title}`}
                               className="opacity-0 transition-opacity hover:text-red-500 focus:opacity-100 group-hover:opacity-100"
                               onClick={(e) => void handleDeleteChat(session.id, e)}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
                                   e.stopPropagation();
                                   void handleDeleteChat(session.id, e as unknown as React.MouseEvent);
                                 }
@@ -657,7 +724,13 @@ export default function App() {
                 <div className="flex items-center gap-3">
                   <Badge variant="outline">{runStatus}</Badge>
                   {trim0Server?.licenseKey ? (
-                    <Badge variant="accent">trim0 connected</Badge>
+                    trim0Server.lastHealthOk === true ? (
+                      <Badge variant="accent">trim0 online</Badge>
+                    ) : trim0Server.lastHealthAt ? (
+                      <Badge variant="outline">trim0 check failed</Badge>
+                    ) : (
+                      <Badge variant="outline">trim0 key set</Badge>
+                    )
                   ) : (
                     <Badge variant="outline">trim0 pending</Badge>
                   )}
@@ -713,6 +786,7 @@ export default function App() {
                       trim0Server={trim0Server}
                       handleSaveProvider={handleSaveProvider}
                       handleSaveTrim0={handleSaveTrim0}
+                      handleValidateTrim0={handleValidateTrim0}
                       saving={saving}
                     />
                   ) : null}
@@ -735,22 +809,34 @@ export default function App() {
                       Files changed
                     </div>
                   </div>
-                  <Badge>{activeChat?.diffs.length ?? 0}</Badge>
+                  <Badge variant="outline">{diffsByFile.length || 0} files</Badge>
                 </div>
               </div>
               <ScrollArea className="min-h-0 flex-1 p-5">
                 <div className="space-y-4">
-                  {activeChat?.diffs.length ? (
-                    activeChat.diffs.map((diff) => (
-                      <article key={diff.id} className="border border-black bg-zinc-50">
-                        <div className="border-b border-black px-4 py-3">
+                  {diffsByFile.length ? (
+                    diffsByFile.map((group) => (
+                      <article key={group.filePath} className="border border-black bg-white">
+                        <div className="border-b border-black bg-zinc-50 px-4 py-3">
                           <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
-                            {diff.filePath}
+                            {group.filePath}
                           </div>
+                          {group.items.length > 1 ? (
+                            <div className="mt-1 text-xs text-zinc-500">
+                              {group.items.length} edits in this session
+                            </div>
+                          ) : null}
                         </div>
-                        <pre className="overflow-auto p-4 text-[11px] leading-5 text-zinc-700">
-                          {diff.patch}
-                        </pre>
+                        <div className="divide-y divide-zinc-200">
+                          {group.items.map((diff) => (
+                            <pre
+                              key={diff.id}
+                              className="max-h-[min(360px,50vh)] overflow-auto bg-zinc-50 p-4 text-[11px] leading-5 text-zinc-800"
+                            >
+                              {diff.patch}
+                            </pre>
+                          ))}
+                        </div>
                       </article>
                     ))
                   ) : (
@@ -796,46 +882,6 @@ export default function App() {
           </Panel>
         </PanelGroup>
       )}
-
-      <Dialog open={!!pendingConfirmation} onOpenChange={() => setPendingConfirmation(null)}>
-        <DialogContent>
-          <DialogTitle>Confirm Action</DialogTitle>
-          <DialogDescription>
-            The agent wants to run a shell command. Approve or deny this request.
-          </DialogDescription>
-          <div className="mt-4 border border-black bg-zinc-50 p-3">
-            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
-              {pendingConfirmation?.toolName}
-            </div>
-            <pre className="mt-2 overflow-auto text-sm text-black">
-              {pendingConfirmation?.command}
-            </pre>
-          </div>
-          <div className="mt-5 flex justify-end gap-3">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (pendingConfirmation) {
-                  void window.trim0.confirmAction(pendingConfirmation.id, false);
-                }
-                setPendingConfirmation(null);
-              }}
-            >
-              Deny
-            </Button>
-            <Button
-              onClick={() => {
-                if (pendingConfirmation) {
-                  void window.trim0.confirmAction(pendingConfirmation.id, true);
-                }
-                setPendingConfirmation(null);
-              }}
-            >
-              Approve
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

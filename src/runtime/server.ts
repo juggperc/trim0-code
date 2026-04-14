@@ -11,6 +11,7 @@ import {
   AGENT_SYSTEM_PROMPT,
   OPENROUTER_DEFAULT_BASE_URL,
 } from "../shared/brand.js";
+import { isLikelyDestructiveShellCommand } from "../shared/shell-risk.js";
 import type {
   AgentEvent,
   DiffSnapshot,
@@ -35,13 +36,28 @@ const notFound = (res: http.ServerResponse) => {
   jsonResponse(res, 404, { error: "Not found" });
 };
 
+const MAX_JSON_BODY_BYTES = 20 * 1024 * 1024;
+
 const readJson = async <T>(req: http.IncomingMessage): Promise<T> => {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(Buffer.from(chunk));
+    const buf = Buffer.from(chunk);
+    total += buf.length;
+    if (total > MAX_JSON_BODY_BYTES) {
+      throw new Error("Request body too large.");
+    }
+    chunks.push(buf);
   }
   const raw = Buffer.concat(chunks).toString("utf8");
-  return JSON.parse(raw) as T;
+  if (!raw.trim()) {
+    throw new Error("Empty request body.");
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error("Invalid JSON body.");
+  }
 };
 
 const nowIso = () => new Date().toISOString();
@@ -464,7 +480,16 @@ const executeTool = async (
   }
 
   if (toolName === "run_command") {
-    if (requestConfirmation) {
+    const command = String(args.command ?? "");
+    const destructive = isLikelyDestructiveShellCommand(command);
+    if (destructive) {
+      if (!requestConfirmation) {
+        return {
+          text:
+            "This command looks destructive or sensitive. Run it manually or approve when the desktop UI prompts.",
+          diffs: [],
+        };
+      }
       const confirmationId = randomUUID();
       const approved = await requestConfirmation(confirmationId, toolName, args);
       if (!approved) {
@@ -474,7 +499,7 @@ const executeTool = async (
         };
       }
     }
-    const result = await runShell(String(args.command), workspacePath!);
+    const result = await runShell(command, workspacePath!);
     return {
       text: [`exit_code=${result.code}`, result.stdout, result.stderr].filter(Boolean).join("\n"),
       diffs: [],
@@ -698,7 +723,7 @@ const server = http.createServer(async (req, res) => {
       return jsonResponse(res, 200, {
         ok: true,
         pid: process.pid,
-        bunVersion: process.versions.bun,
+        nodeVersion: process.versions.node,
       });
     }
 
@@ -712,6 +737,24 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJson<{ server: McpServerConfig }>(req);
       const result = await discoverMcpTools(payload.server);
       return jsonResponse(res, 200, result);
+    }
+
+    if (req.method === "POST" && url.pathname === "/mcp/validate") {
+      const payload = await readJson<{ server: McpServerConfig }>(req);
+      try {
+        const result = await discoverMcpTools(payload.server);
+        return jsonResponse(res, 200, {
+          ok: true,
+          message: `Reachable — ${result.tools.length} tools discovered.`,
+          toolCount: result.tools.length,
+        });
+      } catch (error) {
+        return jsonResponse(res, 200, {
+          ok: false,
+          message: error instanceof Error ? error.message : "Validation failed.",
+          toolCount: 0,
+        });
+      }
     }
 
     if (req.method === "POST" && url.pathname === "/agent/confirm") {
