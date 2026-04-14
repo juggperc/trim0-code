@@ -55,6 +55,15 @@ export function PluginsView({
                 <p className="text-sm text-zinc-600">
                   {server.url || server.command || "Local MCP configuration"}
                 </p>
+                {server.lastHealthAt ? (
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Last check: {new Date(server.lastHealthAt).toLocaleString()} —{" "}
+                    <span className={server.lastHealthOk ? "text-emerald-700" : "text-red-600"}>
+                      {server.lastHealthOk ? "OK" : "Failed"}
+                    </span>
+                    {server.lastHealthMessage ? ` — ${server.lastHealthMessage}` : null}
+                  </p>
+                ) : null}
               </div>
               <div className="flex gap-2">
                 <Button

@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 
 import { AGENT_SYSTEM_PROMPT, TRIM0_PRESET } from "../shared/brand.js";
+import { isLikelyDestructiveShellCommand } from "../shared/shell-risk.js";
 import type {
   AgentEvent,
   AutomationHistoryEntry,
@@ -109,6 +110,12 @@ const runSessionPrompt = async (
       : undefined,
     emitEvents
       ? async (confirmationId, toolName, args) => {
+          if (toolName === "run_command") {
+            const cmd = String((args as { command?: string }).command ?? "");
+            if (!isLikelyDestructiveShellCommand(cmd)) {
+              return true;
+            }
+          }
           mainWindow?.webContents.send("agent:event", {
             runId,
             type: "confirmation-required",
@@ -213,8 +220,13 @@ const createWindow = async () => {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      devTools: true,
+      devTools: isDev,
     },
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url);
+    return { action: "deny" };
   });
 
   if (isDev) {
@@ -310,6 +322,29 @@ const registerIpc = () => {
       authMode,
       enabled: true,
     });
+  });
+
+  ipcMain.handle("trim0:validate", async () => {
+    const server =
+      database.getSnapshot().mcpServers.find((item) => item.id === TRIM0_PRESET.id) ?? TRIM0_PRESET;
+    const checkedAt = nowIso();
+    try {
+      const result = await runtime.validateMcpServer(server);
+      database.setMcpServerHealth(TRIM0_PRESET.id, {
+        ok: result.ok,
+        message: result.message,
+        checkedAt,
+      });
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Validation failed.";
+      database.setMcpServerHealth(TRIM0_PRESET.id, {
+        ok: false,
+        message,
+        checkedAt,
+      });
+      return { ok: false, message, toolCount: 0 };
+    }
   });
 
   ipcMain.handle("mcp:save", async (_event, input: SaveMcpServerInput) => {

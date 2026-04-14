@@ -5,6 +5,7 @@ import { app } from "electron";
 import type {
   AgentEvent,
   McpServerConfig,
+  McpValidateResult,
   ProviderConfig,
   RuntimeAgentRequest,
   RuntimeAgentResponse,
@@ -185,6 +186,21 @@ export class RuntimeClient {
     }
 
     return (await response.json()) as RuntimeDiscoveryResult;
+  }
+
+  async validateMcpServer(server: McpServerConfig): Promise<McpValidateResult> {
+    const response = await fetch(`${this.baseUrl}/mcp/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ server }),
+    });
+
+    if (!response.ok) {
+      const error = (await response.json()) as { error?: string };
+      throw new Error(error.error || "MCP validation failed.");
+    }
+
+    return (await response.json()) as McpValidateResult;
   }
 
   async fetchModels(provider: ProviderConfig) {

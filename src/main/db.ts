@@ -7,6 +7,7 @@ import {
   OPENROUTER_DEFAULT_MODEL,
   TRIM0_PRESET,
 } from "../shared/brand.js";
+import { indexWorkspacePaths } from "./workspace-index.js";
 import type {
   AgentEvent,
   AppSnapshot,
@@ -49,6 +50,23 @@ export class AppDatabase {
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
     this.initialize();
+    this.migrate();
+  }
+
+  private migrate() {
+    const workspaceCols = this.db.prepare("pragma table_info(workspaces)").all() as { name: string }[];
+    if (!workspaceCols.some((c) => c.name === "file_index_json")) {
+      this.db.exec("alter table workspaces add column file_index_json text");
+    }
+    const mcpCols = this.db.prepare("pragma table_info(mcp_servers)").all() as { name: string }[];
+    const addMcpCol = (name: string, ddl: string) => {
+      if (!mcpCols.some((c) => c.name === name)) {
+        this.db.exec(`alter table mcp_servers add column ${name} ${ddl}`);
+      }
+    };
+    addMcpCol("last_health_at", "text");
+    addMcpCol("last_health_ok", "integer");
+    addMcpCol("last_health_message", "text");
   }
 
   private initialize() {
@@ -223,6 +241,9 @@ export class AppDatabase {
       toolCache: parseJson(row.tool_cache_json, []),
       builtInSlug: row.built_in_slug ? String(row.built_in_slug) : undefined,
       licenseKey: row.license_key ? String(row.license_key) : "",
+      lastHealthAt: row.last_health_at ? String(row.last_health_at) : undefined,
+      lastHealthOk: row.last_health_ok === null || row.last_health_ok === undefined ? undefined : Boolean(row.last_health_ok),
+      lastHealthMessage: row.last_health_message ? String(row.last_health_message) : undefined,
     };
   }
 
@@ -232,6 +253,7 @@ export class AppDatabase {
       path: String(row.path),
       name: String(row.name),
       lastOpenedAt: String(row.last_opened_at),
+      fileIndex: parseJson<string[] | undefined>(row.file_index_json, undefined),
     };
   }
 
@@ -367,15 +389,17 @@ export class AppDatabase {
       .prepare("select * from workspaces where path = ?")
       .get(workspacePath) as SqliteRow | undefined;
     const timestamp = nowIso();
+    const indexedPaths = indexWorkspacePaths(workspacePath);
 
     if (existing) {
       this.db
-        .prepare("update workspaces set last_opened_at = ? where id = ?")
-        .run(timestamp, existing.id);
+        .prepare("update workspaces set last_opened_at = ?, file_index_json = ? where id = ?")
+        .run(timestamp, json(indexedPaths), existing.id);
       this.setMeta("activeWorkspaceId", String(existing.id));
       return this.mapWorkspace({
         ...existing,
         last_opened_at: timestamp,
+        file_index_json: json(indexedPaths),
       });
     }
 
@@ -384,15 +408,32 @@ export class AppDatabase {
       path: workspacePath,
       name: path.basename(workspacePath),
       lastOpenedAt: timestamp,
+      fileIndex: indexedPaths,
     };
 
     this.db
       .prepare(
-        "insert into workspaces (id, path, name, last_opened_at) values (@id, @path, @name, @lastOpenedAt)",
+        "insert into workspaces (id, path, name, last_opened_at, file_index_json) values (@id, @path, @name, @lastOpenedAt, @fileIndexJson)",
       )
-      .run(record);
+      .run({ ...record, fileIndexJson: json(record.fileIndex) });
     this.setMeta("activeWorkspaceId", record.id);
     return record;
+  }
+
+  setMcpServerHealth(
+    serverId: string,
+    payload: { ok: boolean; message: string; checkedAt: string },
+  ) {
+    this.db
+      .prepare(
+        "update mcp_servers set last_health_at = @checkedAt, last_health_ok = @ok, last_health_message = @message where id = @id",
+      )
+      .run({
+        id: serverId,
+        checkedAt: payload.checkedAt,
+        ok: payload.ok ? 1 : 0,
+        message: payload.message,
+      });
   }
 
   createChat() {
@@ -534,6 +575,11 @@ export class AppDatabase {
   }
 
   saveMcpServer(input: SaveMcpServerInput | McpServerConfig) {
+    const existingRow = input.id
+      ? (this.db.prepare("select * from mcp_servers where id = ?").get(input.id) as SqliteRow | undefined)
+      : undefined;
+    const existing = existingRow ? this.mapMcpServer(existingRow) : undefined;
+
     const record: McpServerConfig = {
       id: input.id ?? randomUUID(),
       kind: input.kind,
@@ -546,13 +592,17 @@ export class AppDatabase {
       enabled: input.enabled,
       toolCache: input.toolCache ?? [],
       licenseKey: input.licenseKey ?? "",
+      builtInSlug: "builtInSlug" in input && input.builtInSlug !== undefined ? input.builtInSlug : existing?.builtInSlug,
+      lastHealthAt: input.lastHealthAt ?? existing?.lastHealthAt,
+      lastHealthOk: input.lastHealthOk ?? existing?.lastHealthOk,
+      lastHealthMessage: input.lastHealthMessage ?? existing?.lastHealthMessage,
     };
 
     this.db
       .prepare(
         `insert into mcp_servers
-         (id, kind, label, command, url, args_json, env_json, auth_mode, enabled, tool_cache_json, built_in_slug, license_key)
-         values (@id, @kind, @label, @command, @url, @argsJson, @envJson, @authMode, @enabled, @toolCacheJson, @builtInSlug, @licenseKey)
+         (id, kind, label, command, url, args_json, env_json, auth_mode, enabled, tool_cache_json, built_in_slug, license_key, last_health_at, last_health_ok, last_health_message)
+         values (@id, @kind, @label, @command, @url, @argsJson, @envJson, @authMode, @enabled, @toolCacheJson, @builtInSlug, @licenseKey, @lastHealthAt, @lastHealthOk, @lastHealthMessage)
          on conflict(id) do update set
            kind = excluded.kind,
            label = excluded.label,
@@ -573,6 +623,9 @@ export class AppDatabase {
         toolCacheJson: json(record.toolCache),
         builtInSlug: record.builtInSlug ?? null,
         enabled: record.enabled ? 1 : 0,
+        lastHealthAt: record.lastHealthAt ?? null,
+        lastHealthOk: record.lastHealthOk === undefined ? null : record.lastHealthOk ? 1 : 0,
+        lastHealthMessage: record.lastHealthMessage ?? null,
       });
 
     return record;

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Bolt, RefreshCcw, Save, Search } from "lucide-react";
+import { Bolt, RefreshCcw, Save, Search, ShieldCheck } from "lucide-react";
 import type { McpServerConfig, RuntimeModelOption } from "@shared/types";
 import type { ProviderFormState } from "@renderer/view-form-constants";
 import { BrandDither } from "@renderer/components/brand-dither";
@@ -21,6 +21,7 @@ export interface SettingsViewProps {
   trim0Server: McpServerConfig | null;
   handleSaveProvider: () => Promise<void>;
   handleSaveTrim0: () => Promise<void>;
+  handleValidateTrim0: () => Promise<void>;
   saving: boolean;
 }
 
@@ -36,6 +37,7 @@ export function SettingsView({
   trim0Server,
   handleSaveProvider,
   handleSaveTrim0,
+  handleValidateTrim0,
   saving,
 }: SettingsViewProps) {
   return (
@@ -146,14 +148,30 @@ export function SettingsView({
             </select>
           </div>
 
-          <div className="mt-5 flex items-center justify-between">
-            <div className="text-sm text-zinc-500">
-              Endpoint: <span className="font-black text-black">{trim0Server?.url}</span>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 text-sm text-zinc-500">
+              Endpoint:{" "}
+              <span className="font-black text-black break-all">{trim0Server?.url}</span>
+              {trim0Server?.lastHealthAt ? (
+                <span className="mt-1 block text-xs">
+                  Last check: {new Date(trim0Server.lastHealthAt).toLocaleString()} —{" "}
+                  <span className={trim0Server.lastHealthOk ? "text-emerald-700" : "text-red-600"}>
+                    {trim0Server.lastHealthOk ? "OK" : "Failed"}
+                  </span>
+                  {trim0Server.lastHealthMessage ? ` — ${trim0Server.lastHealthMessage}` : null}
+                </span>
+              ) : null}
             </div>
-            <Button onClick={() => void handleSaveTrim0()} disabled={saving}>
-              <Save className="size-4" />
-              Save trim0 auth
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => void handleValidateTrim0()} disabled={saving}>
+                <ShieldCheck className="size-4" />
+                Test connection
+              </Button>
+              <Button onClick={() => void handleSaveTrim0()} disabled={saving}>
+                <Save className="size-4" />
+                Save trim0 auth
+              </Button>
+            </div>
           </div>
         </article>
       </section>

@@ -1,17 +1,18 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap");
 @import "tailwindcss";
+@import "./theme/trim0-tokens.css";
 
 :root {
   color-scheme: light;
-  --background: #ffffff;
-  --foreground: #050505;
-  --muted: #f4f4f5;
-  --muted-foreground: #6b7280;
+  --background: var(--trim0-bg);
+  --foreground: var(--trim0-fg);
+  --muted: var(--trim0-muted);
+  --muted-foreground: var(--trim0-muted-fg);
   --panel: #ffffff;
-  --border: #09090b;
-  --accent-cyan: #22d3ee;
-  --accent-violet: #c084fc;
-  --accent-pink: #f472b6;
+  --border: var(--trim0-border);
+  --accent-cyan: var(--trim0-accent-cyan);
+  --accent-violet: var(--trim0-accent-violet);
+  --accent-pink: var(--trim0-accent-magenta);
 }
 
 * {

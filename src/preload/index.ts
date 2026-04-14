@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AgentEvent,
   McpAuthMode,
+  McpValidateResult,
   SaveAutomationInput,
   SaveMcpServerInput,
   SaveProviderInput,
@@ -18,6 +19,7 @@ const api: Trim0DesktopApi = {
   saveProvider: (input: SaveProviderInput) => ipcRenderer.invoke("provider:save", input),
   saveTrim0License: (licenseKey: string, authMode: McpAuthMode) =>
     ipcRenderer.invoke("trim0:license", licenseKey, authMode),
+  validateTrim0Connection: () => ipcRenderer.invoke("trim0:validate") as Promise<McpValidateResult>,
   saveMcpServer: (input: SaveMcpServerInput) => ipcRenderer.invoke("mcp:save", input),
   discoverMcpTools: (serverId: string) => ipcRenderer.invoke("mcp:discover", serverId),
   saveAutomation: (input: SaveAutomationInput) => ipcRenderer.invoke("automation:save", input),

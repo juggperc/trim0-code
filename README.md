@@ -43,6 +43,7 @@
 |------|---------|
 | `src/main/index.ts` | Electron main process — IPC handlers, lifecycle |
 | `src/main/db.ts` | SQLite via better-sqlite3 — all persistence |
+| `src/main/workspace-index.ts` | File path walk when opening a workspace (capped index for v1) |
 | `src/main/runtime-client.ts` | Spawns agent sidecar (Electron as Node), bridges HTTP ↔ IPC |
 | `src/main/scheduler.ts` | Automation runner via node-cron |
 | `src/runtime/server.ts` | Agent sidecar — agent loop, tools, OpenRouter, MCP |
@@ -50,6 +51,7 @@
 | `src/shared/types.ts` | All shared TypeScript interfaces |
 | `src/shared/brand.ts` | trim0 MCP preset, agent system prompt |
 | `src/renderer/App.tsx` | Shell layout, sidebar, diff panel |
+| `src/renderer/theme/trim0-tokens.css` | Design tokens (palette, accents) |
 | `src/renderer/views/` | Chat, Plugins, Automations, Settings views |
 
 ---
@@ -68,13 +70,14 @@
 - **Automations** — Create, edit, pause, resume, and schedule local automations with cron expressions; run history tracked per automation
 - **Agent run persistence** — Every run is saved with its event log and summary
 - **Real NDJSON streaming** — Sidecar streams events as `application/x-ndjson` lines in real time
-- **Destructive action confirmation** — `run_command` pauses for explicit user approval before executing
+- **Shell command confirmation** — Potentially destructive `run_command` invocations require explicit approval; normal read-only commands run without blocking
+- **trim0 connection test** — Settings can run MCP discovery against the official endpoint and persist last check status
 - **Chat session deletion** — Delete sessions (and cascade-delete messages/diffs) from the sidebar
-- **trim0 design system** — Zero-radius surfaces, uppercase labels, Silkscreen pixel wordmark, restrained cyan/violet/pink accents, grid canvas background
+- **trim0 design tokens** — `src/renderer/theme/trim0-tokens.css` + zero-radius surfaces, uppercase labels, Silkscreen wordmark, grid canvas
 
 ### Wired But Needs Attention
 
-- **Workspace indexing** — The `search_files` tool does naive linear text search capped at 500 files. A proper index (SQLite FTS5, or a simple AST-based index) would make search significantly faster for large workspaces.
+- **Workspace indexing** — Opening a folder stores a capped file path list for UI context; `search_files` still does naive linear text search (500 files). FTS5 or embeddings would scale further.
 - **Error recovery** — OpenRouter/provider errors are surfaced to the user but the agent loop does not retry with backoff. If a provider call fails mid-run, the run fails. Adding retry logic with exponential backoff would improve robustness.
 - **MCP tool schema caching** — Tool schemas are cached in SQLite per server but the cache is only invalidated on explicit "refresh" in the UI. A TTL-based invalidation would keep schemas fresher.
 

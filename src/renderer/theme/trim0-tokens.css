@@ -1,0 +1,17 @@
+/**
+ * trim0.code v1 design tokens — black/white base, zero radius, sparse accents.
+ * Use these CSS variables in Tailwind arbitrary values or components.
+ */
+:root {
+  --trim0-bg: #ffffff;
+  --trim0-fg: #050505;
+  --trim0-muted: #f4f4f5;
+  --trim0-muted-fg: #6b7280;
+  --trim0-border: #09090b;
+  --trim0-accent-cyan: #22d3ee;
+  --trim0-accent-violet: #c084fc;
+  --trim0-accent-magenta: #f472b6;
+  --trim0-label-size: 0.6875rem;
+  --trim0-label-tracking: 0.18em;
+  --trim0-panel-shadow: 8px 8px 0 0 rgba(0, 0, 0, 1);
+}
