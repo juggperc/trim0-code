@@ -51,7 +51,7 @@ export function ChatView({
       <div className="grid max-w-xl gap-5 border border-black bg-white p-6 panel-shadow">
         <BrandDither className="h-44 w-full" />
         <div className="space-y-3">
-          <Badge variant="accent">Electrobun shell</Badge>
+          <Badge variant="accent">trim0 shell</Badge>
           <h2 className="text-3xl font-black uppercase tracking-[0.14em] text-black">
             Open a workspace and start shipping.
           </h2>

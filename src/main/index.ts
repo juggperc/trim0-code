@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { App } from "electron";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 
 import { AGENT_SYSTEM_PROMPT, TRIM0_PRESET } from "../shared/brand.js";
 import type {
@@ -214,8 +213,13 @@ const createWindow = async () => {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      devTools: true,
+      devTools: isDev,
     },
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url);
+    return { action: "deny" };
   });
 
   if (isDev) {

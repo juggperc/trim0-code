@@ -1,7 +1,8 @@
 import type { McpServerConfig, McpToolInfo, ProviderConfig } from "./types.js";
 
 export const APP_NAME = "trim0.code";
-export const APP_TAGLINE = "An electrobun coding agent with native trim0 MCP integration.";
+export const APP_TAGLINE =
+  "A desktop coding agent with native trim0 MCP integration — same context compression as trim0.dev.";
 export const OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 export const OPENROUTER_DEFAULT_MODEL = "openai/gpt-4.1-mini";
 export const TRIM0_ENDPOINT = "https://www.trim0.dev/api/mcp";

@@ -38,9 +38,17 @@ import { ScrollArea } from "@renderer/components/ui/scroll-area";
 import { Separator } from "@renderer/components/ui/separator";
 import { cn } from "@renderer/lib/cn";
 import { ChatView } from "./views/chat-view";
-import { PluginsView, type CustomMcpFormState, INITIAL_CUSTOM_MCP_FORM } from "./views/plugins-view";
-import { AutomationsView, type AutomationFormState, INITIAL_AUTOMATION_FORM } from "./views/automations-view";
-import { SettingsView, type ProviderFormState, INITIAL_PROVIDER_FORM } from "./views/settings-view";
+import {
+  INITIAL_AUTOMATION_FORM,
+  INITIAL_CUSTOM_MCP_FORM,
+  INITIAL_PROVIDER_FORM,
+  type AutomationFormState,
+  type CustomMcpFormState,
+  type ProviderFormState,
+} from "./view-form-constants";
+import { PluginsView } from "./views/plugins-view";
+import { AutomationsView } from "./views/automations-view";
+import { SettingsView } from "./views/settings-view";
 
 
 const VIEWS: Array<{ id: AppView; label: string; icon: typeof MessagesSquare }> = [
@@ -526,7 +534,16 @@ export default function App() {
               <div className="border-b border-black p-5">
                 <Trim0Logo />
                 <p className="mt-3 max-w-[18rem] text-sm text-zinc-600">
-                  Super-fast local coding with built-in trim0 MCP, OpenRouter, and live diffs.
+                  Local workspace agent with trim0 MCP — same docs, skills, and compression tools as{" "}
+                  <a
+                    href="https://www.trim0.dev/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-black text-black underline decoration-2 underline-offset-2 hover:text-zinc-700"
+                  >
+                    trim0.dev
+                  </a>
+                  , plus OpenRouter and live diffs.
                 </p>
               </div>
 
@@ -562,6 +579,8 @@ export default function App() {
                       <button
                         key={item.id}
                         type="button"
+                        aria-pressed={view === item.id}
+                        aria-label={`${item.label} view`}
                         className={cn(
                           "flex min-h-[44px] items-center justify-between border px-3 py-2 text-left text-sm font-black uppercase tracking-[0.18em] transition-colors",
                           view === item.id
@@ -594,6 +613,8 @@ export default function App() {
                       <button
                         key={session.id}
                         type="button"
+                        aria-current={activeChat?.session.id === session.id ? "true" : undefined}
+                        aria-label={`Open chat ${session.title}`}
                         className={cn(
                           "grid w-full gap-2 border px-3 py-3 text-left transition-colors group",
                           activeChat?.session.id === session.id
@@ -615,10 +636,12 @@ export default function App() {
                             <div
                               role="button"
                               tabIndex={0}
+                              aria-label={`Delete chat ${session.title}`}
                               className="opacity-0 transition-opacity hover:text-red-500 focus:opacity-100 group-hover:opacity-100"
                               onClick={(e) => void handleDeleteChat(session.id, e)}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
                                   e.stopPropagation();
                                   void handleDeleteChat(session.id, e as unknown as React.MouseEvent);
                                 }
@@ -796,46 +819,6 @@ export default function App() {
           </Panel>
         </PanelGroup>
       )}
-
-      <Dialog open={!!pendingConfirmation} onOpenChange={() => setPendingConfirmation(null)}>
-        <DialogContent>
-          <DialogTitle>Confirm Action</DialogTitle>
-          <DialogDescription>
-            The agent wants to run a shell command. Approve or deny this request.
-          </DialogDescription>
-          <div className="mt-4 border border-black bg-zinc-50 p-3">
-            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
-              {pendingConfirmation?.toolName}
-            </div>
-            <pre className="mt-2 overflow-auto text-sm text-black">
-              {pendingConfirmation?.command}
-            </pre>
-          </div>
-          <div className="mt-5 flex justify-end gap-3">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (pendingConfirmation) {
-                  void window.trim0.confirmAction(pendingConfirmation.id, false);
-                }
-                setPendingConfirmation(null);
-              }}
-            >
-              Deny
-            </Button>
-            <Button
-              onClick={() => {
-                if (pendingConfirmation) {
-                  void window.trim0.confirmAction(pendingConfirmation.id, true);
-                }
-                setPendingConfirmation(null);
-              }}
-            >
-              Approve
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
