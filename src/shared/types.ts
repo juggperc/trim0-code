@@ -244,7 +244,7 @@ export interface RuntimeAgentResponse {
 export interface RuntimeHealth {
   ok: boolean;
   pid?: number;
-  bunVersion?: string;
+  nodeVersion?: string;
 }
 
 export interface RuntimeDiscoveryResult {

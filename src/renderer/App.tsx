@@ -37,10 +37,18 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@renderer
 import { ScrollArea } from "@renderer/components/ui/scroll-area";
 import { Separator } from "@renderer/components/ui/separator";
 import { cn } from "@renderer/lib/cn";
+import {
+  INITIAL_AUTOMATION_FORM,
+  INITIAL_CUSTOM_MCP_FORM,
+  INITIAL_PROVIDER_FORM,
+  type AutomationFormState,
+  type CustomMcpFormState,
+  type ProviderFormState,
+} from "./view-form-constants";
 import { ChatView } from "./views/chat-view";
-import { PluginsView, type CustomMcpFormState, INITIAL_CUSTOM_MCP_FORM } from "./views/plugins-view";
-import { AutomationsView, type AutomationFormState, INITIAL_AUTOMATION_FORM } from "./views/automations-view";
-import { SettingsView, type ProviderFormState, INITIAL_PROVIDER_FORM } from "./views/settings-view";
+import { PluginsView } from "./views/plugins-view";
+import { AutomationsView } from "./views/automations-view";
+import { SettingsView } from "./views/settings-view";
 
 
 const VIEWS: Array<{ id: AppView; label: string; icon: typeof MessagesSquare }> = [

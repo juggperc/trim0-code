@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { RefreshCcw, Save } from "lucide-react";
 import type { AppSnapshot, McpServerConfig } from "@shared/types";
+import type { CustomMcpFormState } from "@renderer/view-form-constants";
 import { Badge } from "@renderer/components/ui/badge";
 import { Button } from "@renderer/components/ui/button";
 import { Input } from "@renderer/components/ui/input";
@@ -9,30 +10,7 @@ import { Switch } from "@renderer/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@renderer/components/ui/tabs";
 import { Textarea } from "@renderer/components/ui/textarea";
 
-export type CustomMcpFormState = {
-  id?: string;
-  kind: "http" | "stdio";
-  label: string;
-  command: string;
-  url: string;
-  args: string;
-  env: string;
-  authMode: McpServerConfig["authMode"];
-  enabled: boolean;
-  licenseKey: string;
-};
-
-export const INITIAL_CUSTOM_MCP_FORM: CustomMcpFormState = {
-  kind: "http",
-  label: "",
-  command: "",
-  url: "",
-  args: "",
-  env: "",
-  authMode: "none",
-  enabled: true,
-  licenseKey: "",
-};
+export type { CustomMcpFormState } from "@renderer/view-form-constants";
 
 export interface PluginsViewProps {
   snapshot: AppSnapshot;

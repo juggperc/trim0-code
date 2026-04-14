@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Save, TimerReset } from "lucide-react";
 import type { AppSnapshot, AutomationDefinition } from "@shared/types";
+import { formatSchedule, type AutomationFormState } from "@renderer/view-form-constants";
 import { Badge } from "@renderer/components/ui/badge";
 import { Button } from "@renderer/components/ui/button";
 import { Input } from "@renderer/components/ui/input";
@@ -8,27 +9,7 @@ import { Separator } from "@renderer/components/ui/separator";
 import { Switch } from "@renderer/components/ui/switch";
 import { Textarea } from "@renderer/components/ui/textarea";
 
-export type AutomationFormState = {
-  id?: string;
-  name: string;
-  prompt: string;
-  schedule: string;
-  status: AutomationDefinition["status"];
-};
-
-export const INITIAL_AUTOMATION_FORM: AutomationFormState = {
-  name: "Workspace review",
-  prompt:
-    "Review the current workspace, look for obvious TODOs or failures, and summarize what needs attention next.",
-  schedule: "0 * * * *",
-  status: "active",
-};
-
-export const formatSchedule = (value: string) => {
-  if (value === "0 * * * *") return "Hourly";
-  if (value === "0 9 * * 1-5") return "Weekdays at 09:00";
-  return value;
-};
+export type { AutomationFormState } from "@renderer/view-form-constants";
 
 export interface AutomationsViewProps {
   snapshot: AppSnapshot;

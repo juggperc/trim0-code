@@ -2,7 +2,7 @@
 
 **A desktop coding agent built on [trim0](https://trim0.dev).**
 
-`trim0.code` is a native Electron + Bun application that puts a local AI coding agent directly on your machine. Open a workspace, chat with the agent, inspect diffs live, manage MCP servers, and schedule automations — all with the stark, utilitarian aesthetic that defines the trim0 brand.
+`trim0.code` is a native Electron application that puts a local AI coding agent directly on your machine. Open a workspace, chat with the agent, inspect diffs live, manage MCP servers, and schedule automations — all with the stark, utilitarian aesthetic that defines the trim0 brand.
 
 ---
 
@@ -22,9 +22,9 @@
 │  │  (SQLite)    │  │  (node-cron) │  │  Bridge  │  │
 │  └──────────────┘  └──────────────┘  └──────────┘  │
 │         ▲                 ▲               │         │
-│         │    Bun Sidecar  │               │         │
+│         │  Node sidecar (ELECTRON_RUN_AS_NODE) │         │
 │  ┌──────┴─────────────────┴───────────────┴──────┐ │
-│  │              Runtime (Bun/Node)                │ │
+│  │              Runtime (embedded Node)           │ │
 │  │  Agent loop · Tools · OpenRouter · MCP client │ │
 │  └─────────────────────────────────────────────────┘ │
 │         ▲                                         │
@@ -43,9 +43,9 @@
 |------|---------|
 | `src/main/index.ts` | Electron main process — IPC handlers, lifecycle |
 | `src/main/db.ts` | SQLite via better-sqlite3 — all persistence |
-| `src/main/runtime-client.ts` | Spawns Bun sidecar, bridges HTTP ↔ IPC |
+| `src/main/runtime-client.ts` | Spawns agent sidecar (Electron as Node), bridges HTTP ↔ IPC |
 | `src/main/scheduler.ts` | Automation runner via node-cron |
-| `src/runtime/server.ts` | Bun sidecar — agent loop, tools, OpenRouter, MCP |
+| `src/runtime/server.ts` | Agent sidecar — agent loop, tools, OpenRouter, MCP |
 | `src/preload/index.ts` | `window.trim0` API exposed to renderer |
 | `src/shared/types.ts` | All shared TypeScript interfaces |
 | `src/shared/brand.ts` | trim0 MCP preset, agent system prompt |
@@ -67,7 +67,7 @@
 - **Custom MCP servers** — Add stdio or HTTP MCP servers; tool discovery and caching
 - **Automations** — Create, edit, pause, resume, and schedule local automations with cron expressions; run history tracked per automation
 - **Agent run persistence** — Every run is saved with its event log and summary
-- **Real NDJSON streaming** — Bun sidecar streams events as `application/x-ndjson` lines in real time
+- **Real NDJSON streaming** — Sidecar streams events as `application/x-ndjson` lines in real time
 - **Destructive action confirmation** — `run_command` pauses for explicit user approval before executing
 - **Chat session deletion** — Delete sessions (and cascade-delete messages/diffs) from the sidebar
 - **trim0 design system** — Zero-radius surfaces, uppercase labels, Silkscreen pixel wordmark, restrained cyan/violet/pink accents, grid canvas background
@@ -97,8 +97,7 @@
 
 ### Prerequisites
 
-- **Node.js 20+** and **npm**
-- **Bun** — required to run the sidecar runtime (`bun` must be in PATH)
+- **Node.js 20+** and **npm** (for development and building)
 - **Git**
 - **A display** — Electron requires a GUI environment (X11, macOS Quartz, or Windows)
 
@@ -147,7 +146,7 @@ npm run renderer     # Build renderer with Vite
 | Layer | Technology |
 |-------|------------|
 | Desktop | Electron |
-| Sidecar runtime | Bun (or Node.js) |
+| Sidecar runtime | Node (same binary as Electron via `ELECTRON_RUN_AS_NODE`) |
 | Renderer | React 19, Vite, Tailwind v4 |
 | UI components | shadcn/ui (customised zero-radius) |
 | Animations | Framer Motion |

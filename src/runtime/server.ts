@@ -698,7 +698,7 @@ const server = http.createServer(async (req, res) => {
       return jsonResponse(res, 200, {
         ok: true,
         pid: process.pid,
-        bunVersion: process.versions.bun,
+        nodeVersion: process.versions.node,
       });
     }
 
