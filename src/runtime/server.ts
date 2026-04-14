@@ -35,13 +35,28 @@ const notFound = (res: http.ServerResponse) => {
   jsonResponse(res, 404, { error: "Not found" });
 };
 
+const MAX_JSON_BODY_BYTES = 20 * 1024 * 1024;
+
 const readJson = async <T>(req: http.IncomingMessage): Promise<T> => {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(Buffer.from(chunk));
+    const buf = Buffer.from(chunk);
+    total += buf.length;
+    if (total > MAX_JSON_BODY_BYTES) {
+      throw new Error("Request body too large.");
+    }
+    chunks.push(buf);
   }
   const raw = Buffer.concat(chunks).toString("utf8");
-  return JSON.parse(raw) as T;
+  if (!raw.trim()) {
+    throw new Error("Empty request body.");
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error("Invalid JSON body.");
+  }
 };
 
 const nowIso = () => new Date().toISOString();

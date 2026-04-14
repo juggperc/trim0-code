@@ -1,24 +1,13 @@
 import { motion } from "framer-motion";
 import { Bolt, RefreshCcw, Save, Search } from "lucide-react";
 import type { McpServerConfig, RuntimeModelOption } from "@shared/types";
+import type { ProviderFormState } from "@renderer/view-form-constants";
 import { BrandDither } from "@renderer/components/brand-dither";
 import { Badge } from "@renderer/components/ui/badge";
 import { Button } from "@renderer/components/ui/button";
 import { Input } from "@renderer/components/ui/input";
 
-export type ProviderFormState = {
-  label: string;
-  apiKey: string;
-  baseUrl: string;
-  defaultModel: string;
-};
-
-export const INITIAL_PROVIDER_FORM: ProviderFormState = {
-  label: "OpenRouter",
-  apiKey: "",
-  baseUrl: "https://openrouter.ai/api/v1",
-  defaultModel: "openai/gpt-4.1-mini",
-};
+export type { ProviderFormState } from "@renderer/view-form-constants";
 
 export interface SettingsViewProps {
   models: RuntimeModelOption[];
