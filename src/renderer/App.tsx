@@ -122,6 +122,7 @@ export default function App() {
   const [agentLog, setAgentLog] = useState<AgentEvent[]>([]);
   const [models, setModels] = useState<RuntimeModelOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [prefetchingId, setPrefetchingId] = useState<string | null>(null);
   const [providerForm, setProviderForm] = useState<ProviderFormState>(INITIAL_PROVIDER_FORM);
   const [trim0License, setTrim0License] = useState("");
@@ -190,6 +191,7 @@ export default function App() {
     void (async () => {
       try {
         setLoading(true);
+        setBootstrapError(null);
         const [payload, runtimeModels] = await Promise.all([
           window.trim0.bootstrap(),
           window.trim0.fetchModels(),
@@ -201,8 +203,10 @@ export default function App() {
           prefetchCacheRef.current.set(payload.activeChat.session.id, payload.activeChat);
         }
       } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error.";
+        setBootstrapError(message);
         toast.error("Bootstrap failed", {
-          description: error instanceof Error ? error.message : "Unknown error.",
+          description: message,
         });
       } finally {
         setLoading(false);
@@ -564,7 +568,50 @@ export default function App() {
           </DialogContent>
         ) : null}
       </Dialog>
-      {loading || !snapshot ? (
+      {bootstrapError ? (
+        <div className="grid h-full place-items-center p-8">
+          <div className="max-w-lg border border-black bg-white p-6 panel-shadow">
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
+              Startup error
+            </div>
+            <h2 className="mt-3 text-xl font-black uppercase tracking-[0.14em]">Could not load app data</h2>
+            <p className="mt-3 whitespace-pre-wrap font-mono text-sm text-zinc-800">{bootstrapError}</p>
+            <p className="mt-4 text-sm text-zinc-600">
+              Check the terminal where Electron is running (main process logs). If the agent runtime failed to start,
+              restart <span className="font-mono">npm run dev</span>.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button
+                onClick={() => {
+                  setBootstrapError(null);
+                  setLoading(true);
+                  void (async () => {
+                    try {
+                      const [payload, runtimeModels] = await Promise.all([
+                        window.trim0.bootstrap(),
+                        window.trim0.fetchModels(),
+                      ]);
+                      setSnapshot(payload.snapshot);
+                      setActiveChat(payload.activeChat ?? null);
+                      setModels(runtimeModels);
+                      setBootstrapError(null);
+                      if (payload.activeChat) {
+                        prefetchCacheRef.current.set(payload.activeChat.session.id, payload.activeChat);
+                      }
+                    } catch (err) {
+                      setBootstrapError(err instanceof Error ? err.message : "Unknown error.");
+                    } finally {
+                      setLoading(false);
+                    }
+                  })();
+                }}
+              >
+                Retry
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : loading || !snapshot ? (
         <div className="grid h-full place-items-center">
           <div className="flex items-center gap-3 border border-black bg-white px-5 py-4 panel-shadow">
             <LoaderCircle className="size-4 animate-spin" />
