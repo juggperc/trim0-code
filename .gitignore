@@ -29,6 +29,7 @@ release
 *.sln
 *.sw?
 rewrite.py
+package-lock.json
 *.db
 *.db-journal
 *.db-shm

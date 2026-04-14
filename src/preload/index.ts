@@ -6,7 +6,7 @@ import type {
   SaveMcpServerInput,
   SaveProviderInput,
   Trim0DesktopApi,
-} from "@shared/types.js";
+} from "../shared/types.js";
 
 const api: Trim0DesktopApi = {
   bootstrap: () => ipcRenderer.invoke("bootstrap"),

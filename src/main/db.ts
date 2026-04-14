@@ -6,7 +6,7 @@ import {
   DEFAULT_PROVIDER,
   OPENROUTER_DEFAULT_MODEL,
   TRIM0_PRESET,
-} from "@shared/brand.js";
+} from "../shared/brand.js";
 import type {
   AgentEvent,
   AppSnapshot,
@@ -22,7 +22,7 @@ import type {
   SaveMcpServerInput,
   SaveProviderInput,
   WorkspaceRecord,
-} from "@shared/types.js";
+} from "../shared/types.js";
 
 type SqliteRow = Record<string, unknown>;
 

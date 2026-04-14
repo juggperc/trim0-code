@@ -10,7 +10,7 @@ import { createPatch } from "diff";
 import {
   AGENT_SYSTEM_PROMPT,
   OPENROUTER_DEFAULT_BASE_URL,
-} from "@shared/brand.js";
+} from "../shared/brand.js";
 import type {
   AgentEvent,
   DiffSnapshot,
@@ -20,7 +20,7 @@ import type {
   RuntimeAgentResponse,
   RuntimeDiscoveryResult,
   RuntimeModelOption,
-} from "@shared/types.js";
+} from "../shared/types.js";
 
 const args = process.argv.slice(2);
 const portFlag = args.findIndex((value) => value === "--port");

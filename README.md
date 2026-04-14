@@ -100,6 +100,7 @@
 - **Node.js 20+** and **npm**
 - **Bun** — required to run the sidecar runtime (`bun` must be in PATH)
 - **Git**
+- **A display** — Electron requires a GUI environment (X11, macOS Quartz, or Windows)
 
 ### Install
 
@@ -107,14 +108,20 @@
 npm install
 ```
 
+> **Note:** `bun.lock` is committed; npm will install from `package.json` and maintain its own `package-lock.json` (ignored by git).
+
 ### Develop
 
 ```bash
-# Terminal 1 — watch mode for both renderer and electron code
 npm run dev
-
-# The Electron app will launch with hot-reload for the renderer
 ```
+
+This starts three concurrent processes:
+- **Vite** — hot-reloads the React renderer at `http://127.0.0.1:5173`
+- **tsc --watch** — type-checks and compiles electron + runtime TypeScript to `dist-electron/`
+- **electronmon** — runs the compiled electron app and restarts it when files change
+
+> **Note:** The dev script requires a GUI environment. On headless servers, run `npm run build` instead and launch the packaged app directly.
 
 ### Build
 
