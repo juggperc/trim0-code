@@ -11,7 +11,7 @@ import type {
   RuntimeDiscoveryResult,
   RuntimeHealth,
   RuntimeModelOption,
-} from "@shared/types.js";
+} from "../shared/types.js";
 
 const RUNTIME_PORT = 47822;
 

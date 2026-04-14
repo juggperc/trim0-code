@@ -1,6 +1,6 @@
 import cron, { type ScheduledTask } from "node-cron";
 import { CronExpressionParser } from "cron-parser";
-import type { AutomationDefinition } from "@shared/types.js";
+import type { AutomationDefinition } from "../shared/types.js";
 
 const computeNextRunAt = (schedule: string) => {
   try {

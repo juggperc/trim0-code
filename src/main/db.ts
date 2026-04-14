@@ -6,7 +6,7 @@ import {
   DEFAULT_PROVIDER,
   OPENROUTER_DEFAULT_MODEL,
   TRIM0_PRESET,
-} from "@shared/brand.js";
+} from "../shared/brand.js";
 import type {
   AgentEvent,
   AppSnapshot,
@@ -22,7 +22,7 @@ import type {
   SaveMcpServerInput,
   SaveProviderInput,
   WorkspaceRecord,
-} from "@shared/types.js";
+} from "../shared/types.js";
 
 type SqliteRow = Record<string, unknown>;
 
@@ -168,39 +168,74 @@ export class AppDatabase {
       .prepare("select name from sqlite_master where type='table' and name='chat_messages_fts'")
       .get() as { name?: string } | undefined;
     if (!ftsExists) {
-      this.db.exec(`
-        create virtual table chat_messages_fts using fts5(
-          session_id unindexed,
-          message_id unindexed,
-          content,
-          tokenize = 'porter unicode61'
-        );
-
-        insert into chat_messages_fts(session_id, message_id, content)
-        select session_id, id, content from chat_messages
-        where role in ('user', 'assistant');
-
-        create trigger chat_messages_ai_fts after insert on chat_messages
-        when new.role in ('user', 'assistant')
-        begin
-          insert into chat_messages_fts(session_id, message_id, content)
-          values (new.session_id, new.id, new.content);
-        end;
-
-        create trigger chat_messages_ad_fts after delete on chat_messages
-        begin
-          delete from chat_messages_fts where message_id = old.id;
-        end;
-
-        create trigger chat_messages_au_fts after update of content, session_id, role on chat_messages
-        begin
-          delete from chat_messages_fts where message_id = old.id;
-          insert into chat_messages_fts(session_id, message_id, content)
-          select new.session_id, new.id, new.content
-          where new.role in ('user', 'assistant');
-        end;
-      `);
+      this.ensureChatMessagesFts();
     }
+  }
+
+  /**
+   * FTS5 tokenizer support varies by SQLite build (e.g. some Windows Electron builds
+   * omit unicode61). Try the richest tokenizer first, then fall back so startup never throws.
+   */
+  private ensureChatMessagesFts() {
+    const tokenizers = ["porter unicode61", "porter", "unicode61", ""];
+    let lastError: unknown;
+
+    for (const tokenize of tokenizers) {
+      const tokenizeClause = tokenize ? `,\n          tokenize = '${tokenize}'` : "";
+      try {
+        this.db.exec("begin");
+        this.db.exec(`
+          create virtual table chat_messages_fts using fts5(
+            session_id unindexed,
+            message_id unindexed,
+            content${tokenizeClause}
+          );
+
+          insert into chat_messages_fts(session_id, message_id, content)
+          select session_id, id, content from chat_messages
+          where role in ('user', 'assistant');
+
+          create trigger chat_messages_ai_fts after insert on chat_messages
+          when new.role in ('user', 'assistant')
+          begin
+            insert into chat_messages_fts(session_id, message_id, content)
+            values (new.session_id, new.id, new.content);
+          end;
+
+          create trigger chat_messages_ad_fts after delete on chat_messages
+          begin
+            delete from chat_messages_fts where message_id = old.id;
+          end;
+
+          create trigger chat_messages_au_fts after update of content, session_id, role on chat_messages
+          begin
+            delete from chat_messages_fts where message_id = old.id;
+            insert into chat_messages_fts(session_id, message_id, content)
+            select new.session_id, new.id, new.content
+            where new.role in ('user', 'assistant');
+          end;
+        `);
+        this.db.exec("commit");
+        return;
+      } catch (error) {
+        lastError = error;
+        try {
+          this.db.exec("rollback");
+        } catch {
+          // ignore rollback errors
+        }
+        try {
+          this.db.exec("drop table if exists chat_messages_fts");
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    console.warn(
+      "[trim0.code] FTS5 chat index unavailable; session search will be disabled until SQLite supports it.",
+      lastError,
+    );
   }
 
   private seedDefaults() {
